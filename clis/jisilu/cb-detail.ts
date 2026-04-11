@@ -229,9 +229,9 @@ cli({
             if (eventType.includes('下修')) {
               eventTypeEn = 'down_revise';
             } else if (eventType.includes('其它')) {
-              if (detail.includes('每股派')) {
+              if (detail.includes('股派')) {
                 eventTypeEn = 'bonus';
-              } else if (detail.includes('股票激励')) {
+              } else if (detail.includes('激励')) {
                 eventTypeEn = 'stock_incentive';
               } else if (detail.includes('增发')) {
                 eventTypeEn = 'issue';
