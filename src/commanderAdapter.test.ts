@@ -8,9 +8,13 @@ const { mockExecuteCommand, mockRenderOutput } = vi.hoisted(() => ({
   mockRenderOutput: vi.fn(),
 }));
 
-vi.mock('./execution.js', () => ({
-  executeCommand: mockExecuteCommand,
-}));
+vi.mock('./execution.js', async () => {
+  const actual = await vi.importActual<typeof import('./execution.js')>('./execution.js');
+  return {
+    ...actual,
+    executeCommand: mockExecuteCommand,
+  };
+});
 
 vi.mock('./output.js', () => ({
   render: mockRenderOutput,
@@ -66,6 +70,20 @@ describe('commanderAdapter arg passing', () => {
     expect(kwargs['prepare-only']).toBe(true);
   });
 
+  it('passes option value sources through for adapters that need explicit-vs-default semantics', async () => {
+    const program = new Command();
+    const siteCmd = program.command('paperreview');
+    registerCommandToProgram(siteCmd, cmd);
+
+    await program.parseAsync(['node', 'opencli', 'paperreview', 'submit', './paper.pdf', '--prepare-only']);
+
+    expect(mockExecuteCommand).toHaveBeenCalled();
+    const kwargs = mockExecuteCommand.mock.calls[0][1];
+    expect(kwargs.__opencliOptionSources).toMatchObject({
+      'prepare-only': 'cli',
+    });
+  });
+
   it('rejects invalid bool values before calling executeCommand', async () => {
     const program = new Command();
     const siteCmd = program.command('paperreview');
@@ -73,7 +91,7 @@ describe('commanderAdapter arg passing', () => {
 
     await program.parseAsync(['node', 'opencli', 'paperreview', 'submit', './paper.pdf', '--dry-run', 'maybe']);
 
-    // normalizeArgValue validates bools eagerly; executeCommand should not be reached
+    // prepareCommandArgs validates bools before dispatch; executeCommand should not be reached
     expect(mockExecuteCommand).not.toHaveBeenCalled();
   });
 });
@@ -202,7 +220,43 @@ describe('commanderAdapter command aliases', () => {
 
     await program.parseAsync(['node', 'opencli', 'notebooklm', 'metadata']);
 
-    expect(mockExecuteCommand).toHaveBeenCalledWith(cmd, {}, false);
+    expect(mockExecuteCommand).toHaveBeenCalledWith(cmd, {}, false, { prepared: true });
+  });
+});
+
+describe('commanderAdapter validation preparation', () => {
+  beforeEach(() => {
+    mockExecuteCommand.mockReset();
+    mockExecuteCommand.mockResolvedValue([]);
+    mockRenderOutput.mockReset();
+    delete process.env.OPENCLI_VERBOSE;
+    process.exitCode = undefined;
+  });
+
+  it('prepares args once before dispatching to executeCommand', async () => {
+    const validateArgs = vi.fn();
+    const program = new Command();
+    const siteCmd = program.command('test');
+
+    registerCommandToProgram(siteCmd, {
+      site: 'test',
+      name: 'run',
+      description: 'Run test command',
+      browser: false,
+      args: [{ name: 'count', default: '1', help: 'Count' }],
+      validateArgs,
+      func: vi.fn(),
+    });
+
+    await program.parseAsync(['node', 'opencli', 'test', 'run']);
+
+    expect(validateArgs).toHaveBeenCalledTimes(1);
+    expect(mockExecuteCommand).toHaveBeenCalledWith(
+      expect.objectContaining({ site: 'test', name: 'run' }),
+      { count: '1' },
+      false,
+      { prepared: true },
+    );
   });
 });
 

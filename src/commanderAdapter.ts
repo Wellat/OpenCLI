@@ -11,31 +11,18 @@
  */
 
 import { Command } from 'commander';
-import chalk from 'chalk';
+import { log } from './logger.js';
 import yaml from 'js-yaml';
 import { type CliCommand, fullName, getRegistry } from './registry.js';
 import { formatRegistryHelpText } from './serialization.js';
 import { render as renderOutput } from './output.js';
-import { executeCommand } from './execution.js';
+import { executeCommand, prepareCommandArgs } from './execution.js';
 import {
   CliError,
   EXIT_CODES,
-  ArgumentError,
   toEnvelope,
 } from './errors.js';
 import { isDiagnosticEnabled } from './diagnostic.js';
-
-export function normalizeArgValue(argType: string | undefined, value: unknown, name: string): unknown {
-  if (argType !== 'bool' && argType !== 'boolean') return value;
-  if (typeof value === 'boolean') return value;
-  if (value == null || value === '') return false;
-
-  const normalized = String(value).trim().toLowerCase();
-  if (normalized === 'true') return true;
-  if (normalized === 'false') return false;
-
-  throw new ArgumentError(`"${name}" must be either "true" or "false".`);
-}
 
 /**
  * Register a single CliCommand as a Commander subcommand.
@@ -76,18 +63,28 @@ export function registerCommandToProgram(siteCmd: Command, cmd: CliCommand): voi
     // ── Execute + render ────────────────────────────────────────────────
     try {
       // ── Collect kwargs ────────────────────────────────────────────────
-      const kwargs: Record<string, unknown> = {};
+      const rawKwargs: Record<string, unknown> = {};
       for (let i = 0; i < positionalArgs.length; i++) {
         const v = actionArgs[i];
-        if (v !== undefined) kwargs[positionalArgs[i].name] = v;
+        if (v !== undefined) rawKwargs[positionalArgs[i].name] = v;
       }
       for (const arg of cmd.args) {
         if (arg.positional) continue;
         const camelName = arg.name.replace(/-([a-z])/g, (_m, ch: string) => ch.toUpperCase());
         const v = optionsRecord[arg.name] ?? optionsRecord[camelName];
-        if (v !== undefined) kwargs[arg.name] = normalizeArgValue(arg.type, v, arg.name);
+        if (v !== undefined) rawKwargs[arg.name] = v;
       }
-      cmd.validateArgs?.(kwargs);
+      const optionSources: Record<string, string> = {};
+      for (const arg of cmd.args) {
+        if (arg.positional) continue;
+        const camelName = arg.name.replace(/-([a-z])/g, (_m, ch: string) => ch.toUpperCase());
+        const source = subCmd.getOptionValueSource(camelName) ?? subCmd.getOptionValueSource(arg.name);
+        if (source === 'cli') optionSources[arg.name] = source;
+      }
+      if (Object.keys(optionSources).length > 0) {
+        rawKwargs.__opencliOptionSources = optionSources;
+      }
+      const kwargs = prepareCommandArgs(cmd, rawKwargs);
 
       const verbose = optionsRecord.verbose === true;
       let format = typeof optionsRecord.format === 'string' ? optionsRecord.format : 'table';
@@ -96,10 +93,10 @@ export function registerCommandToProgram(siteCmd: Command, cmd: CliCommand): voi
       if (cmd.deprecated) {
         const message = typeof cmd.deprecated === 'string' ? cmd.deprecated : `${fullName(cmd)} is deprecated.`;
         const replacement = cmd.replacedBy ? ` Use ${cmd.replacedBy} instead.` : '';
-        console.error(chalk.yellow(`Deprecated: ${message}${replacement}`));
+        log.warn(`Deprecated: ${message}${replacement}`);
       }
 
-      const result = await executeCommand(cmd, kwargs, verbose);
+      const result = await executeCommand(cmd, kwargs, verbose, { prepared: true });
       if (result === null || result === undefined) {
         return;
       }
@@ -110,7 +107,7 @@ export function registerCommandToProgram(siteCmd: Command, cmd: CliCommand): voi
       }
 
       if (verbose && (!result || (Array.isArray(result) && result.length === 0))) {
-        console.error(chalk.yellow('[Verbose] Warning: Command returned an empty result.'));
+        log.warn('Command returned an empty result.');
       }
       renderOutput(result, {
         fmt: format,

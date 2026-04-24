@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   fetchDaemonStatusMock,
@@ -8,28 +8,96 @@ const {
   requestDaemonShutdownMock: vi.fn(),
 }));
 
-vi.mock('chalk', () => ({
-  default: {
-    green: (s: string) => s,
-    red: (s: string) => s,
-    dim: (s: string) => s,
-  },
-}));
-
 vi.mock('../browser/daemon-client.js', () => ({
   fetchDaemonStatus: fetchDaemonStatusMock,
   requestDaemonShutdown: requestDaemonShutdownMock,
 }));
 
-import { daemonStop } from './daemon.js';
+import { daemonStatus, daemonStop } from './daemon.js';
 
-describe('daemonStop', () => {
-  let logSpy: ReturnType<typeof vi.spyOn>;
-  let errorSpy: ReturnType<typeof vi.spyOn>;
+describe('daemonStatus', () => {
+  let stdoutSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
-    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    stdoutSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    fetchDaemonStatusMock.mockReset();
+    requestDaemonShutdownMock.mockReset();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('reports "not running" when daemon is unreachable', async () => {
+    fetchDaemonStatusMock.mockResolvedValue(null);
+
+    await daemonStatus();
+
+    expect(stdoutSpy).toHaveBeenCalledWith(expect.stringContaining('not running'));
+  });
+
+  it('shows daemon info when running', async () => {
+    fetchDaemonStatusMock.mockResolvedValue({
+      ok: true,
+      pid: 12345,
+      uptime: 3661,
+      extensionConnected: true,
+      extensionVersion: '1.6.8',
+      pending: 0,
+      memoryMB: 64,
+      port: 19825,
+    });
+
+    await daemonStatus();
+
+    expect(stdoutSpy).toHaveBeenCalledWith(expect.stringContaining('running'));
+    expect(stdoutSpy).toHaveBeenCalledWith(expect.stringContaining('PID 12345'));
+    expect(stdoutSpy).toHaveBeenCalledWith(expect.stringContaining('1h 1m'));
+    expect(stdoutSpy).toHaveBeenCalledWith(expect.stringContaining('connected'));
+    expect(stdoutSpy).toHaveBeenCalledWith(expect.stringContaining('v1.6.8'));
+    expect(stdoutSpy).toHaveBeenCalledWith(expect.stringContaining('64 MB'));
+    expect(stdoutSpy).toHaveBeenCalledWith(expect.stringContaining('19825'));
+  });
+
+  it('shows disconnected when extension is not connected', async () => {
+    fetchDaemonStatusMock.mockResolvedValue({
+      ok: true,
+      pid: 99,
+      uptime: 120,
+      extensionConnected: false,
+      pending: 0,
+      memoryMB: 32,
+      port: 19825,
+    });
+
+    await daemonStatus();
+
+    expect(stdoutSpy).toHaveBeenCalledWith(expect.stringContaining('disconnected'));
+  });
+
+  it('shows version unknown when the connected extension does not report one', async () => {
+    fetchDaemonStatusMock.mockResolvedValue({
+      ok: true,
+      pid: 99,
+      uptime: 120,
+      extensionConnected: true,
+      extensionVersion: undefined,
+      pending: 0,
+      memoryMB: 32,
+      port: 19825,
+    });
+
+    await daemonStatus();
+
+    expect(stdoutSpy).toHaveBeenCalledWith(expect.stringContaining('version unknown'));
+  });
+});
+
+describe('daemonStop', () => {
+  let stderrSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     fetchDaemonStatusMock.mockReset();
     requestDaemonShutdownMock.mockReset();
   });
@@ -43,7 +111,7 @@ describe('daemonStop', () => {
 
     await daemonStop();
 
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('not running'));
+    expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('not running'));
   });
 
   it('sends shutdown and reports success', async () => {
@@ -61,7 +129,7 @@ describe('daemonStop', () => {
     await daemonStop();
 
     expect(requestDaemonShutdownMock).toHaveBeenCalledTimes(1);
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Daemon stopped'));
+    expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('Daemon stopped'));
   });
 
   it('reports failure when shutdown request fails', async () => {
@@ -78,6 +146,6 @@ describe('daemonStop', () => {
 
     await daemonStop();
 
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to stop daemon'));
+    expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to stop daemon'));
   });
 });

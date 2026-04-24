@@ -20,8 +20,6 @@ const {
   _getCommitHash,
   _installDependencies,
   _postInstallMonorepoLifecycle,
-  _promoteDir,
-  _replaceDir,
   installPlugin,
   listPlugins,
   _readLockFile,
@@ -639,7 +637,7 @@ describe('postInstallMonorepoLifecycle', () => {
     fs.rmSync(repoDir, { recursive: true, force: true });
   });
 
-  it('installs dependencies once at the monorepo root, not in each sub-plugin', () => {
+  it('installs dependencies at the monorepo root and skips sub-plugins without own dependencies', () => {
     _postInstallMonorepoLifecycle(repoDir, [subDir]);
 
     const npmCalls = mockExecFileSync.mock.calls.filter(
@@ -649,6 +647,26 @@ describe('postInstallMonorepoLifecycle', () => {
     expect(npmCalls).toHaveLength(1);
     expect(npmCalls[0][2]).toMatchObject({ cwd: repoDir });
     expect(npmCalls.some(([, , opts]) => opts?.cwd === subDir)).toBe(false);
+  });
+
+  it('also installs dependencies in sub-plugins that declare their own production dependencies', () => {
+    // Give the sub-plugin its own production dependencies
+    fs.writeFileSync(path.join(subDir, 'package.json'), JSON.stringify({
+      name: 'opencli-plugin-alpha',
+      version: '1.0.0',
+      type: 'module',
+      dependencies: { undici: '^8.0.0' },
+    }));
+
+    _postInstallMonorepoLifecycle(repoDir, [subDir]);
+
+    const npmCalls = mockExecFileSync.mock.calls.filter(
+      ([cmd, args]) => cmd === 'npm' && Array.isArray(args) && args[0] === 'install',
+    );
+
+    expect(npmCalls).toHaveLength(2);
+    expect(npmCalls[0][2]).toMatchObject({ cwd: repoDir });
+    expect(npmCalls[1][2]).toMatchObject({ cwd: subDir });
   });
 });
 
@@ -1028,68 +1046,6 @@ describe('moveDir', () => {
   });
 });
 
-describe('promoteDir', () => {
-  it('cleans up temporary publish dir when final rename fails', () => {
-    const staging = path.join(os.tmpdir(), 'opencli-promote-stage');
-    const dest = path.join(os.tmpdir(), 'opencli-promote-dest');
-    const publishErr = new Error('publish failed');
-    const existsSync = vi.fn(() => false);
-    const mkdirSync = vi.fn(() => undefined);
-    const cpSync = vi.fn(() => undefined);
-    const rmSync = vi.fn(() => undefined);
-    const renameSync = vi.fn((src, _target) => {
-      if (String(src) === staging) return;
-      throw publishErr;
-    });
-
-    expect(() => _promoteDir(staging, dest, { existsSync, mkdirSync, renameSync, cpSync, rmSync })).toThrow(publishErr);
-
-    const tempDest = renameSync.mock.calls[0][1];
-    expect(renameSync).toHaveBeenNthCalledWith(1, staging, tempDest);
-    expect(renameSync).toHaveBeenNthCalledWith(2, tempDest, dest);
-    expect(rmSync).toHaveBeenCalledWith(tempDest, { recursive: true, force: true });
-  });
-});
-
-describe('replaceDir', () => {
-  it('rolls back the original destination when swap fails', () => {
-    const staging = path.join(os.tmpdir(), 'opencli-replace-stage');
-    const dest = path.join(os.tmpdir(), 'opencli-replace-dest');
-    const publishErr = new Error('swap failed');
-    const existingPaths = new Set([dest]);
-    const existsSync = vi.fn((p) => existingPaths.has(String(p)));
-    const mkdirSync = vi.fn(() => undefined);
-    const cpSync = vi.fn(() => undefined);
-    const rmSync = vi.fn(() => undefined);
-    const renameSync = vi.fn((src, target) => {
-      if (String(src) === staging) {
-        existingPaths.add(String(target));
-        return;
-      }
-      if (String(src) === dest) {
-        existingPaths.delete(dest);
-        existingPaths.add(String(target));
-        return;
-      }
-      if (String(target) === dest) throw publishErr;
-      if (existingPaths.has(String(src))) {
-        existingPaths.delete(String(src));
-        existingPaths.add(String(target));
-      }
-    });
-
-    expect(() => _replaceDir(staging, dest, { existsSync, mkdirSync, renameSync, cpSync, rmSync })).toThrow(publishErr);
-
-    const tempDest = renameSync.mock.calls[0][1];
-    const backupDest = renameSync.mock.calls[1][1];
-    expect(renameSync).toHaveBeenNthCalledWith(1, staging, tempDest);
-    expect(renameSync).toHaveBeenNthCalledWith(2, dest, backupDest);
-    expect(renameSync).toHaveBeenNthCalledWith(3, tempDest, dest);
-    expect(renameSync).toHaveBeenNthCalledWith(4, backupDest, dest);
-    expect(rmSync).toHaveBeenCalledWith(tempDest, { recursive: true, force: true });
-  });
-});
-
 describe('installPlugin transactional staging', () => {
   const standaloneSource = 'github:user/opencli-plugin-__test-transactional-standalone__';
   const standaloneName = '__test-transactional-standalone__';
@@ -1397,6 +1353,51 @@ describe('updatePlugin transactional staging', () => {
     expect(_readLockFile()[monorepoPluginName]?.source).toMatchObject({
       kind: 'monorepo',
       subPath: 'packages/moved-alpha',
+    });
+  });
+
+  it('rejects monorepo updates whose manifest path escapes the repo root', () => {
+    const oldSubDir = path.join(monorepoRepoDir, 'packages', 'old-alpha');
+    fs.mkdirSync(oldSubDir, { recursive: true });
+    fs.writeFileSync(path.join(oldSubDir, 'old.js'), 'cli({ site: "old", name: "old" })');
+    fs.mkdirSync(PLUGINS_DIR, { recursive: true });
+    fs.symlinkSync(oldSubDir, monorepoLink, 'dir');
+
+    const lock = _readLockFile();
+    lock[monorepoPluginName] = {
+      source: {
+        kind: 'monorepo',
+        url: 'https://github.com/user/opencli-plugins-__test-transactional-mono-update__.git',
+        repoName: monorepoName,
+        subPath: 'packages/old-alpha',
+      },
+      commitHash: 'oldmonooldmonooldmonooldmonooldmonoold',
+      installedAt: '2025-01-01T00:00:00.000Z',
+    };
+    _writeLockFile(lock);
+
+    mockExecFileSync.mockImplementation((cmd, args) => {
+      if (cmd === 'git' && Array.isArray(args) && args[0] === 'clone') {
+        const cloneDir = String(args[4]);
+        fs.mkdirSync(cloneDir, { recursive: true });
+        fs.writeFileSync(path.join(cloneDir, 'opencli-plugin.json'), JSON.stringify({
+          plugins: {
+            [monorepoPluginName]: { path: '../outside-alpha' },
+          },
+        }));
+        return '';
+      }
+      if (cmd === 'git' && Array.isArray(args) && args[0] === 'rev-parse' && args[1] === 'HEAD') {
+        return '1234567890abcdef1234567890abcdef12345678\n';
+      }
+      return '';
+    });
+
+    expect(() => updatePlugin(monorepoPluginName)).toThrow('escapes repo root');
+    expect(fs.realpathSync(monorepoLink)).toBe(fs.realpathSync(oldSubDir));
+    expect(_readLockFile()[monorepoPluginName]?.source).toMatchObject({
+      kind: 'monorepo',
+      subPath: 'packages/old-alpha',
     });
   });
 

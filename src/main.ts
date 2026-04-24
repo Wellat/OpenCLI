@@ -18,14 +18,33 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getCompletionsFromManifest, hasAllManifests, printCompletionScriptFast } from './completion-fast.js';
-import { getCliManifestPath } from './package-paths.js';
+import { findPackageRoot, getCliManifestPath } from './package-paths.js';
 import { PKG_VERSION } from './version.js';
 import { EXIT_CODES } from './errors.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const BUILTIN_CLIS = path.resolve(__dirname, '..', 'clis');
+// Adapters are JS-first and live at <package-root>/clis/.
+// Use findPackageRoot so the path works both in dev (src/main.ts) and prod (dist/src/main.js).
+const BUILTIN_CLIS = path.join(findPackageRoot(__filename), 'clis');
 const USER_CLIS = path.join(os.homedir(), '.opencli', 'clis');
+
+// ── Session lifecycle flags ──────────────────────────────────────────────
+// `--live` / `--focus` are top-level-ish toggles that tweak the automation
+// window's lifecycle. We strip them from argv before Commander runs so they
+// can be placed anywhere and work on any subcommand (adapter or browser).
+{
+  const liveIdx = process.argv.indexOf('--live');
+  if (liveIdx !== -1) {
+    process.env.OPENCLI_LIVE = '1';
+    process.argv.splice(liveIdx, 1);
+  }
+  const focusIdx = process.argv.indexOf('--focus');
+  if (focusIdx !== -1) {
+    process.env.OPENCLI_WINDOW_FOCUSED = '1';
+    process.argv.splice(focusIdx, 1);
+  }
+}
 
 // ── Ultra-fast path: lightweight commands bypass full discovery ──────────
 // These are high-frequency or trivial paths that must not pay the startup tax.
@@ -49,10 +68,11 @@ if (argv[0] === 'completion' && argv.length >= 2) {
 // Fast path: --get-completions — read from manifest, skip discovery
 const getCompIdx = process.argv.indexOf('--get-completions');
 if (getCompIdx !== -1) {
-  // Only require manifest for directories that actually exist.
-  // If user clis dir doesn't exist, there are no user adapters to miss.
+  // Only include manifests that actually exist on disk.
+  // With sparse override, the user clis dir may exist but have no manifest.
   const manifestPaths = [getCliManifestPath(BUILTIN_CLIS)];
-  try { fs.accessSync(USER_CLIS); manifestPaths.push(getCliManifestPath(USER_CLIS)); } catch { /* no user dir */ }
+  const userManifest = getCliManifestPath(USER_CLIS);
+  try { fs.accessSync(userManifest); manifestPaths.push(userManifest); } catch { /* no user manifest */ }
   if (hasAllManifests(manifestPaths)) {
     const rest = process.argv.slice(getCompIdx + 1);
     let cursor: number | undefined;
@@ -84,10 +104,20 @@ const { registerUpdateNoticeOnExit, checkForUpdateBackground } = await import('.
 
 installNodeNetwork();
 
-// Sequential: plugins must run after built-in discovery so they can override built-in commands.
-await ensureUserCliCompatShims();
-await ensureUserAdapters();
-await discoverClis(BUILTIN_CLIS, USER_CLIS);
+// Parallelise independent startup I/O:
+//  - Built-in adapter discovery has no dependency on user-dir setup.
+//  - ensureUserCliCompatShims and ensureUserAdapters operate on different paths
+//    (~/.opencli/node_modules/ vs ~/.opencli/clis/ + adapter-manifest.json).
+//  - registerCommand() overwrites on name collision (see registry.ts), so
+//    user-CLI discovery MUST run after built-in discovery to preserve the
+//    intended override order (user adapters override built-in ones).
+//  - discoverPlugins runs last: plugins may override both built-in and user CLIs.
+const [, ,] = await Promise.all([
+  ensureUserCliCompatShims(),
+  ensureUserAdapters(),
+  discoverClis(BUILTIN_CLIS),
+]);
+await discoverClis(USER_CLIS);
 await discoverPlugins();
 
 // Register exit hook: notice appears after command output (same as npm/gh/yarn)

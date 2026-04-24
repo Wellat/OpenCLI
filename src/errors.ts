@@ -137,6 +137,12 @@ export class SelectorError extends CliError {
   }
 }
 
+export class PluginError extends CliError {
+  constructor(message: string, hint?: string) {
+    super('PLUGIN', message, hint, EXIT_CODES.GENERIC_ERROR);
+  }
+}
+
 // ── Error Envelope ──────────────────────────────────────────────────────────
 
 /** Structured error output — unified contract for all consumers (AI agents, scripts, humans). */
@@ -148,6 +154,7 @@ export interface ErrorEnvelope {
     help?: string;
     exitCode: number;
     stack?: string;
+    cause?: string;
   };
 }
 
@@ -158,8 +165,20 @@ export function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Serialize an error cause chain into a readable string. */
+function serializeCause(cause: unknown, depth: number = 0): string {
+  if (depth > 10) return '(cause chain truncated)';
+  if (cause instanceof Error) {
+    const parts = [cause.message];
+    if (cause.cause) parts.push(`  caused by: ${serializeCause(cause.cause, depth + 1)}`);
+    return parts.join('\n');
+  }
+  return String(cause);
+}
+
 /** Build an ErrorEnvelope from any caught value. */
 export function toEnvelope(err: unknown): ErrorEnvelope {
+  const cause = err instanceof Error && err.cause ? serializeCause(err.cause) : undefined;
   if (err instanceof CliError) {
     return {
       ok: false,
@@ -168,6 +187,7 @@ export function toEnvelope(err: unknown): ErrorEnvelope {
         message: err.message,
         ...(err.hint ? { help: err.hint } : {}),
         exitCode: err.exitCode,
+        ...(cause ? { cause } : {}),
       },
     };
   }
@@ -178,6 +198,7 @@ export function toEnvelope(err: unknown): ErrorEnvelope {
       code: 'UNKNOWN',
       message: msg,
       exitCode: EXIT_CODES.GENERIC_ERROR,
+      ...(cause ? { cause } : {}),
     },
   };
 }

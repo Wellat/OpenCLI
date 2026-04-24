@@ -1,7 +1,7 @@
 ---
 name: opencli-autofix
-description: Automatically fix broken OpenCLI adapters when commands fail. Load this skill when an opencli command fails — it guides you through diagnosing the failure via OPENCLI_DIAGNOSTIC, patching the adapter, and retrying. Works with any AI agent.
-allowed-tools: Bash(opencli:*), Read, Edit, Write
+description: Automatically fix broken OpenCLI adapters when commands fail. Load this skill when an opencli command fails — it guides you through diagnosing the failure via OPENCLI_DIAGNOSTIC, patching the adapter, retrying, and filing an upstream GitHub issue after a verified fix. Works with any AI agent.
+allowed-tools: Bash(opencli:*), Bash(gh:*), Read, Edit, Write
 ---
 
 # OpenCLI AutoFix — Automatic Adapter Self-Repair
@@ -69,7 +69,7 @@ This outputs a `RepairContext` JSON between `___OPENCLI_DIAGNOSTIC___` markers i
   "adapter": {
     "site": "example",
     "command": "example/search",
-    "sourcePath": "/path/to/clis/example/search.ts",
+    "sourcePath": "/path/to/clis/example/search.js",
     "source": "// full adapter source code"
   },
   "page": {
@@ -130,8 +130,11 @@ opencli browser open https://example.com/target-page && opencli browser state
 # Interact to trigger API calls
 opencli browser click <N> && opencli browser network
 
-# Inspect specific API response
-opencli browser network --detail <index>
+# Narrow to the request you care about by the fields its body should have
+opencli browser network --filter author,text,likes
+
+# Inspect specific API response (key is the `key` field from the default JSON output)
+opencli browser network --detail <key>
 ```
 
 ## Step 4: Patch the Adapter
@@ -165,8 +168,8 @@ cat <RepairContext.adapter.sourcePath>
 
 **Wait condition update:**
 ```typescript
-// Before: await page.waitForSelector('.loading-spinner', { hidden: true })
-// After:  await page.waitForSelector('[data-loaded="true"]')
+// Before: await page.wait({ selector: '.loading-spinner', hidden: true })
+// After:  await page.wait({ selector: '[data-loaded="true"]' })
 ```
 
 ### Rules for Patching
@@ -176,6 +179,7 @@ cat <RepairContext.adapter.sourcePath>
 3. **Prefer API over DOM scraping** — if you discover a JSON API during exploration, switch to it
 4. **Use `@jackwener/opencli/*` imports only** — never add third-party package imports
 5. **Test after patching** — run the command again to verify
+6. **Never relax `verify/<cmd>.json` fixtures to silence a failure.** A failing `patterns` / `notEmpty` / `mustNotContain` / `mustBeTruthy` rule means the adapter's output is broken. Tighten the adapter so it produces correct values; do not loosen the fixture to accept the broken values. The one legitimate reason to edit a fixture during repair is when the **site itself** changed shape (e.g. URL format migration) — in that case update the fixture and note the change in `~/.opencli/sites/<site>/notes.md`. Otherwise editing the fixture is covering up a silent correctness regression.
 
 ## Step 5: Verify the Fix
 
@@ -185,6 +189,60 @@ opencli <site> <command> [args...]
 ```
 
 If it still fails, go back to Step 1 and collect fresh diagnostics. You have a budget of **3 repair rounds** (diagnose → fix → retry). If the same error persists after a fix, try a different approach. After 3 rounds, stop and report what was tried.
+
+## Step 6: File an Upstream Issue
+
+If the retry **passes**, the local adapter has drifted from upstream. File a GitHub issue so the fix flows back to `jackwener/OpenCLI`.
+
+**Do NOT file for:**
+- `AUTH_REQUIRED`, `BROWSER_CONNECT`, `ARGUMENT`, `CONFIG` — environment/usage issues, not adapter bugs
+- CAPTCHA or rate limiting — not fixable upstream
+- Failures you couldn't actually fix (3 rounds exhausted)
+
+**Only file after a verified local fix** — the retry must pass first.
+
+**Procedure:**
+
+1. Prepare the issue content from the RepairContext you already have:
+   - **Title:** `[autofix] <site>/<command>: <error_code>` (e.g. `[autofix] zhihu/hot: SELECTOR`)
+   - **Body** (use this template):
+
+```markdown
+## Summary
+OpenCLI autofix repaired this adapter locally, and the retry passed.
+
+## Adapter
+- Site: `<site>`
+- Command: `<command>`
+- OpenCLI version: `<version from opencli --version>`
+
+## Original failure
+- Error code: `<error_code>`
+
+~~~
+<error_message>
+~~~
+
+## Local fix summary
+
+~~~
+<1-2 sentence description of what you changed and why>
+~~~
+
+_Issue filed by OpenCLI autofix after a verified local repair._
+```
+
+2. **Ask the user before filing.** Show them the draft title and body. Only proceed if they confirm.
+
+3. If the user approves and `gh auth status` succeeds:
+
+```bash
+gh issue create --repo jackwener/OpenCLI \
+  --title "[autofix] <site>/<command>: <error_code>" \
+  --body "<the body above>"
+```
+
+If `gh` is not installed or not authenticated, tell the user and skip — do not error out.
 
 ## When to Stop
 
@@ -196,7 +254,7 @@ If it still fails, go back to Step 1 and collect fresh diagnostics. You have a b
 **Soft stops (report after attempting):**
 - **3 repair rounds exhausted** — stop, report what was tried and what failed
 - **Feature completely removed** — the data no longer exists
-- **Major redesign** — needs full adapter rewrite via `opencli-explorer` skill
+- **Major redesign** — needs full adapter rewrite via `opencli-adapter-author` skill
 
 In all stop cases, clearly communicate the situation to the user rather than making futile patches.
 
@@ -218,4 +276,8 @@ In all stop cases, clearly communicate the situation to the user rather than mak
 
 6. AI verifies: opencli zhihu hot
    → Success: returns hot topics
+
+7. AI prepares upstream issue draft, shows it to the user
+
+8. User approves → AI runs: gh issue create --repo jackwener/OpenCLI --title "[autofix] zhihu/hot: SELECTOR" --body "..."
 ```
