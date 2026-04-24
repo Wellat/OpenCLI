@@ -101,7 +101,7 @@ cli({
       '最后转股日': 'last_conversion_date',
     };
 
-    const result: Record<string, string> = {};
+    const result = {};
     for (const [chinese, english] of Object.entries(labelMap)) {
       result[english] = kvPairs[chinese] || '';
     }
