@@ -9640,6 +9640,7 @@
         "type": "int",
         "default": 50,
         "required": false,
+        "positional": true,
         "help": "返回数量，默认50"
       }
     ],

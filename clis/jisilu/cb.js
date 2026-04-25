@@ -8,7 +8,7 @@ cli({
   strategy: Strategy.COOKIE,
   browser: true,
   args: [
-    { name: 'limit', type: 'int', default: 50, help: '返回数量，默认50' },
+    { name: 'limit', type: 'int', default: 50, positional: true, help: '返回数量，默认50' },
   ],
   columns: ['cb_code', 'cb_name', 'stock_code', 'stock_name', 'premium_rate'],
   func: async (page, kwargs) => {

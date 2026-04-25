@@ -129,9 +129,68 @@ cli({
     result.bond_name = bondName;
 
     // 提取事件列表
-    const events = await page.evaluate(`(() => {
+    const events = await page.evaluate(`(async () => {
       const tables = document.querySelectorAll('table');
       const allEvents = [];
+
+      const normalizeText = (text) => (text || '').replace(/\\s+/g, ' ').trim();
+      const getRowText = (row) => normalizeText(row?.textContent || '');
+      const getCells = (row) => row ? row.querySelectorAll('th, td') : [];
+      const looksLikeDate = (text) => /\\d{4}-\\d{2}-\\d{2}/.test(text);
+      const inferEventType = (text) => {
+        if (text.includes('不强赎') || text.includes('不提前赎回')) return 'no_redemption';
+        if (text.includes('不下修')) return 'no_revise';
+        if (text.includes('下修')) return 'down_revise';
+        if (text.includes('股派')) return 'bonus';
+        if (text.includes('激励')) return 'stock_incentive';
+        if (text.includes('增发')) return 'issue';
+        return 'other';
+      };
+
+      // 等待事件表加载（集思录部分表格会异步渲染）
+      for (let attempt = 0; attempt < 30; attempt++) {
+        const pageText = normalizeText(document.body?.textContent || '');
+        if (
+          pageText.includes('不强赎历史')
+          || pageText.includes('转股价不下修历史')
+          || pageText.includes('转股价调整历史')
+        ) {
+          break;
+        }
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      // 优先从历史区块提取（页面新版通常将历史数据渲染在这两个容器）
+      const historyBlocks = ['adj_logs', 'unadj_logs']
+        .map(id => document.getElementById(id))
+        .filter(Boolean);
+      for (const block of historyBlocks) {
+        const rows = block.querySelectorAll('tr');
+        for (const row of rows) {
+          const cells = Array.from(getCells(row))
+            .map(cell => normalizeText(cell.textContent))
+            .filter(Boolean);
+          if (cells.length === 0) continue;
+
+          const rowText = cells.join(' | ');
+          if (!looksLikeDate(rowText)) continue;
+          if (rowText.includes('公告日') || rowText.includes('决议日') || rowText.includes('生效日期')) continue;
+
+          const dateCell = cells.find(text => looksLikeDate(text)) || '';
+          const detail = cells.length >= 3 ? cells.slice(2).join(' | ') : cells[cells.length - 1] || '';
+          const eventType = inferEventType(rowText + ' ' + detail);
+
+          allEvents.push({
+            event_time: dateCell,
+            event_type: eventType,
+            detail,
+          });
+        }
+      }
+
+      if (allEvents.length > 0) {
+        return allEvents;
+      }
 
       // 改进的辅助函数：查找事件表格
       function findEventTable(titleText, expectedMinCols) {
@@ -150,10 +209,10 @@ cli({
             const table = tables[index];
             const rows = table.querySelectorAll('tr');
             if (rows.length >= 2) {
-              const firstRowCells = rows[0].querySelectorAll('td');
+              const firstRowCells = getCells(rows[0]);
               if (firstRowCells.length >= expectedMinCols) {
                 // 检查第一行是否看起来像正确的表头
-                const firstRowText = rows[0].textContent;
+                const firstRowText = getRowText(rows[0]);
                 // 对于不同的表格类型，检查特定的表头关键词
                 let isCorrectHeader = false;
                 if (titleText === '转股价调整历史') {
@@ -167,7 +226,7 @@ cli({
                   isCorrectHeader = firstRowText.includes('决议日') && firstRowText.includes('重新起算日');
                 }
 
-                if (isCorrectHeader && !firstRowText.match(/\\d{4}-\\d{2}-\\d{2}/)) {
+                if (isCorrectHeader && !looksLikeDate(firstRowText)) {
                   return index;
                 }
               }
@@ -180,10 +239,10 @@ cli({
           const table = tables[i];
           const rows = table.querySelectorAll('tr');
           if (rows.length >= 2) {
-            const firstRowCells = rows[0].querySelectorAll('td');
+            const firstRowCells = getCells(rows[0]);
             if (firstRowCells.length >= expectedMinCols) {
               // 检查第一行是否看起来像正确的表头
-              const firstRowText = rows[0].textContent;
+              const firstRowText = getRowText(rows[0]);
               let isCorrectHeader = false;
               if (titleText === '转股价调整历史') {
                 isCorrectHeader = firstRowText.includes('股东大会') && firstRowText.includes('生效日期');
@@ -193,7 +252,7 @@ cli({
                 isCorrectHeader = firstRowText.includes('决议日') && firstRowText.includes('重新起算日');
               }
 
-              if (isCorrectHeader && !firstRowText.match(/\\d{4}-\\d{2}-\\d{2}/)) {
+              if (isCorrectHeader && !looksLikeDate(firstRowText)) {
                 return i;
               }
             }
@@ -211,7 +270,7 @@ cli({
         // 跳过表头行（索引0）
         for (let i = 1; i < rows.length; i++) {
           const row = rows[i];
-          const cells = row.querySelectorAll('td');
+          const cells = getCells(row);
           if (cells.length >= 7) {
             const meetingDate = cells[0]?.textContent.trim() || '';
             const effectiveDate = cells[1]?.textContent.trim() || '';
@@ -262,7 +321,7 @@ cli({
         // 跳过表头行（索引0）
         for (let i = 1; i < rows.length; i++) {
           const row = rows[i];
-          const cells = row.querySelectorAll('td');
+          const cells = getCells(row);
           if (cells.length >= 3) {
             const resolutionDate = cells[0]?.textContent.trim() || '';
             const reStartDate = cells[1]?.textContent.trim() || '';
@@ -296,7 +355,7 @@ cli({
         // 跳过表头行（索引0）
         for (let i = 1; i < rows.length; i++) {
           const row = rows[i];
-          const cells = row.querySelectorAll('td');
+          const cells = getCells(row);
           if (cells.length >= 3) {
             const announcementDate = cells[0]?.textContent.trim() || '';
             const reStartDate = cells[1]?.textContent.trim() || '';
