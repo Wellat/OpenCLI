@@ -9710,26 +9710,59 @@
   {
     "site": "jisilu",
     "name": "cb",
-    "description": "获取集思录可转债列表",
+    "description": "集思录可转债列表（支持排序和条数限制）",
     "domain": "www.jisilu.cn",
     "strategy": "cookie",
     "browser": true,
     "args": [
       {
+        "name": "sort",
+        "type": "string",
+        "default": "price",
+        "required": false,
+        "help": "排序字段：price / change / premium / ytm / volume / turnover / convertValue / yearLeft / stockChange / pb"
+      },
+      {
+        "name": "order",
+        "type": "string",
+        "default": "asc",
+        "required": false,
+        "help": "排序方向：asc (升序) / desc (降序)"
+      },
+      {
         "name": "limit",
         "type": "int",
         "default": 50,
         "required": false,
-        "positional": true,
         "help": "返回数量，默认50"
       }
     ],
     "columns": [
-      "cb_code",
-      "cb_name",
-      "stock_code",
-      "stock_name",
-      "premium_rate"
+      "rank",
+      "bondId",
+      "bondName",
+      "price",
+      "priceChangePct",
+      "stockId",
+      "stockName",
+      "stockPrice",
+      "stockPriceChangePct",
+      "pb",
+      "convertPrice",
+      "convertValue",
+      "premiumRate",
+      "rating",
+      "volatilityRate",
+      "forceRedeemPrice",
+      "maturityDate",
+      "yearLeft",
+      "ytmRate",
+      "currIssAmt",
+      "volume",
+      "turnoverRate",
+      "market",
+      "listDate",
+      "lastTime"
     ],
     "type": "js",
     "modulePath": "jisilu/cb.js",
@@ -9780,6 +9813,49 @@
     "type": "js",
     "modulePath": "jisilu/cb-detail.js",
     "sourceFile": "jisilu/cb-detail.js",
+    "navigateBefore": "https://www.jisilu.cn"
+  },
+  {
+    "site": "jisilu",
+    "name": "cb-discuss",
+    "description": "获取集思录可转债相关讨论帖",
+    "domain": "www.jisilu.cn",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "code",
+        "type": "str",
+        "required": true,
+        "positional": true,
+        "help": "可转债代码，例如127109"
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "default": 10,
+        "required": false,
+        "help": "返回帖子数量，默认10"
+      },
+      {
+        "name": "sort",
+        "type": "string",
+        "default": "new",
+        "required": false,
+        "help": "排序：new(最新) / hot(热门)"
+      }
+    ],
+    "columns": [
+      "questionId",
+      "title",
+      "replies",
+      "views",
+      "publishTime",
+      "url"
+    ],
+    "type": "js",
+    "modulePath": "jisilu/cb-discuss.js",
+    "sourceFile": "jisilu/cb-discuss.js",
     "navigateBefore": "https://www.jisilu.cn"
   },
   {
