@@ -9,7 +9,7 @@ const SORT_FIELDS = {
   ytm:          { prop: 'ytm_rt',       label: '到期收益率' },
   volume:       { prop: 'volume',       label: '成交额' },
   turnover:     { prop: 'turnover_rt',  label: '换手率' },
-  convertValue: { prop: 'convert_value',label: '转股价值' },
+  convertValue: { prop: 'convert_value',label: '转股价值'     },
   yearLeft:     { prop: 'year_left',    label: '剩余年限' },
   stockChange:  { prop: 'sincrease_rt', label: '正股涨跌' },
   pb:           { prop: 'pb',           label: '正股PB' },
