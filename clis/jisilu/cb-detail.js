@@ -7,6 +7,7 @@ cli({
   description: '获取集思录可转债详情',
   domain: 'www.jisilu.cn',
   strategy: Strategy.COOKIE,
+  access: 'read',
   browser: true,
   args: [
     { name: 'code', required: true, positional: true, help: '可转债代码，例如111000' },

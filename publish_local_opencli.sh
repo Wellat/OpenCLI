@@ -35,6 +35,9 @@ npm run build
 echo "==> Linking local package globally..."
 npm link
 
+echo "==> Syncing adapters (clearing stale overrides)..."
+OPENCLI_FETCH=1 node scripts/fetch-adapters.js
+
 echo "==> opencli path: $(which opencli)"
 echo "Use Example:"
 echo "opencli jisilu cb-detail 128145 -f json"

@@ -23,6 +23,7 @@ cli({
   description: '集思录可转债列表（支持排序和条数限制）',
   domain: 'www.jisilu.cn',
   strategy: Strategy.COOKIE,
+  access: 'read',
   browser: true,
   args: [
     { name: 'sort',  type: 'string', default: 'price',   help: `排序字段：${VALID_SORT_KEYS}` },
