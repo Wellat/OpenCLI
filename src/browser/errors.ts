@@ -81,8 +81,10 @@ export function classifyBrowserError(err: unknown): RetryAdvice {
     return { kind: 'target-navigation', retryable: true, delayMs: 200 };
   }
 
-  // CDP protocol error with target context (e.g., -32000 "target closed")
-  if (msg.includes('-32000') && msg.toLowerCase().includes('target')) {
+  // CDP protocol error with target/context invalidation (e.g., -32000 "target closed" or
+  // -32000 "Cannot find default execution context" — both indicate the inspected target
+  // went away and a fresh attach should recover).
+  if (msg.includes('-32000') && /target|context/i.test(msg)) {
     return { kind: 'target-navigation', retryable: true, delayMs: 200 };
   }
 
@@ -105,7 +107,7 @@ export function formatBrowserConnectError(kind: ConnectFailureKind, detail?: str
     case 'daemon-not-running':
       return new BrowserConnectError(
         'Cannot connect to opencli daemon.' + (detail ? `\n\n${detail}` : ''),
-        `The daemon should auto-start. If it keeps failing, make sure port ${DEFAULT_DAEMON_PORT} is available.`,
+        `Run \`opencli doctor\` to diagnose, or \`opencli daemon restart\` to force a fresh daemon. Default port is ${DEFAULT_DAEMON_PORT}.`,
         kind,
       );
     case 'extension-not-connected':

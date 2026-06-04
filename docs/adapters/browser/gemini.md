@@ -11,6 +11,10 @@
 | `opencli gemini image <prompt>` | Generate images in Gemini and optionally save them locally |
 | `opencli gemini deep-research <prompt>` | Start a Gemini Deep Research run and confirm it |
 | `opencli gemini deep-research-result <query>` | Export Deep Research report URL from a Gemini conversation |
+| `opencli gemini status` | Check Gemini web page availability and login state |
+| `opencli gemini history [--limit N]` | List visible Gemini conversation history from the sidebar |
+| `opencli gemini detail <id>` | Open a Gemini conversation by id, URL, or sidebar title and read its turns |
+| `opencli gemini read` | Read the turns visible in the current Gemini web conversation |
 
 ## Usage Examples
 
@@ -70,5 +74,6 @@ opencli gemini image "A flat illustration of a robot" --op ~/tmp/gemini-images
 ## Caveats
 
 - This adapter drives the Gemini consumer web UI, not a public API.
+- Gemini commands default to persistent site sessions, so consecutive `gemini ask` / `gemini image` / `gemini deep-research-result` invocations continue in the same Gemini page. Pass `--site-session ephemeral` for a one-shot tab.
 - It depends on the current browser session and may fail if Gemini shows login, consent, challenge, quota, or other gating UI.
 - DOM or product changes on Gemini can break composer detection, new-chat handling, or image export behavior.
