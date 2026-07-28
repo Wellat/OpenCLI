@@ -47,13 +47,16 @@ opencli jisilu cb-detail <code> -f json
 
 ### `cb_event_list` 事件列表说明
 
-`cb_event_list` 字段是一个JSON数组，包含可转债的历史事件。每个事件包含以下字段：
+`cb_event_list` 字段是一个JSON数组，包含可转债的历史事件，包括转股价调整、是否下修、是否强赎，以及评级历史表里的债项评级变更。每个事件包含以下字段：
 
 ```json
 {
   "event_time": "事件时间（YYYY-MM-DD格式）",
   "event_type": "事件类型（见事件类型说明）",
-  "detail": "事件详情描述"
+  "detail": "事件详情描述",
+  "rating_from": "变更前债项评级（仅bond_rating_change事件）",
+  "rating_to": "变更后债项评级（仅bond_rating_change事件）",
+  "issuer_rating": "主体评级（仅bond_rating_change事件，如页面表格提供）"
 }
 ```
 
@@ -68,6 +71,7 @@ opencli jisilu cb-detail <code> -f json
 | `bonus` | 分红 | "2024年每xx股派0.04元" |
 | `stock_incentive` | 股票激励 | "限制性股票激励计划" |
 | `issue` | 增发 | "增发H股" |
+| `bond_rating_change` | 债项评级变更 | "债项评级 A+ -> BBB+" |
 | `undefined` | 未识别的事件类型（保留字段） | - |
 
 ## 使用示例

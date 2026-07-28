@@ -131,13 +131,14 @@ cli({
 
     // 提取事件列表
     const events = await page.evaluate(`(async () => {
-      const tables = document.querySelectorAll('table');
+      let tables = [];
       const allEvents = [];
 
       const normalizeText = (text) => (text || '').replace(/\\s+/g, ' ').trim();
       const getRowText = (row) => normalizeText(row?.textContent || '');
       const getCells = (row) => row ? row.querySelectorAll('th, td') : [];
-      const looksLikeDate = (text) => /\\d{4}-\\d{2}-\\d{2}/.test(text);
+      const looksLikeDate = (text) => /\\d{4}[-\\/.]\\d{2}[-\\/.]\\d{2}/.test(text);
+      const firstDate = (text) => ((text || '').match(/\\d{4}[-\\/.]\\d{2}[-\\/.]\\d{2}/)?.[0] || '').replace(/[\\.\\/]/g, '-');
       const inferEventType = (text) => {
         if (text.includes('不强赎') || text.includes('不提前赎回')) return 'no_redemption';
         if (text.includes('不下修')) return 'no_revise';
@@ -160,6 +161,7 @@ cli({
         }
         await new Promise(resolve => setTimeout(resolve, 100));
       }
+      tables = document.querySelectorAll('table');
 
       // 优先从历史区块提取（页面新版通常将历史数据渲染在这两个容器）
       const historyBlocks = ['adj_logs', 'unadj_logs']
@@ -188,6 +190,56 @@ cli({
           });
         }
       }
+
+      // 评级历史表里的债项评级变更
+      const ratingHistoryRows = [];
+      for (const table of tables) {
+        const rows = Array.from(table.querySelectorAll('tr'));
+        const parsedRows = rows.map(row => Array.from(getCells(row)).map(cell => normalizeText(cell.textContent)));
+        const headerIndex = parsedRows.findIndex(cells =>
+          cells.some(text => text.includes('债项评级') || text.includes('债券评级'))
+          && cells.some(text => text.includes('日期') || text.includes('时间'))
+        );
+        if (headerIndex === -1) continue;
+
+        const headers = parsedRows[headerIndex];
+        const dateIndex = headers.findIndex(text => text.includes('日期') || text.includes('时间'));
+        const debtRatingIndex = headers.findIndex(text => text.includes('债项评级') || text.includes('债券评级'));
+        const issuerRatingIndex = headers.findIndex(text => text.includes('主体评级'));
+        if (dateIndex === -1 || debtRatingIndex === -1) continue;
+
+        for (const cells of parsedRows.slice(headerIndex + 1)) {
+          const eventTime = firstDate(cells[dateIndex] || cells.find(text => looksLikeDate(text)) || '');
+          const debtRating = cells[debtRatingIndex] || '';
+          if (!eventTime || !debtRating || debtRating.includes('会员')) continue;
+
+          ratingHistoryRows.push({
+            event_time: eventTime,
+            debt_rating: debtRating,
+            issuer_rating: issuerRatingIndex === -1 ? '' : cells[issuerRatingIndex] || '',
+          });
+        }
+      }
+
+      ratingHistoryRows
+        .sort((left, right) => left.event_time.localeCompare(right.event_time))
+        .forEach((row, index, rows) => {
+          if (index === 0) return;
+
+          const previous = rows[index - 1];
+          if (!previous.debt_rating || previous.debt_rating === row.debt_rating) {
+            return;
+          }
+
+          allEvents.push({
+            event_time: row.event_time,
+            event_type: 'bond_rating_change',
+            detail: \`债项评级 \${previous.debt_rating} -> \${row.debt_rating}\`,
+            rating_from: previous.debt_rating,
+            rating_to: row.debt_rating,
+            issuer_rating: row.issuer_rating,
+          });
+        });
 
       if (allEvents.length > 0) {
         return allEvents;
