@@ -38,6 +38,9 @@ opencli jisilu cb-detail <code> -f json
 | `force_redemption_trigger_price` | 强赎触发价 | 触发强制赎回的正股价（元） | "22.555" |
 | `adjust_trigger_price` | 下修触发价 | 触发转股价下修的正股价（元） | "14.748" |
 | `put_trigger_price` | 回售触发价 | 触发回售的正股价（元） | "12.145" |
+| `force_redeem_countdown` | 强赎天计数 | 强赎触发计数状态文本（暂不强赎 / 已计天数等） | "暂不强赎 ! 2026-10-21重新计" |
+| `down_revise_countdown` | 下修天计数 | 下修触发计数状态文本（如"至少还需15天"） | "至少还需15天 ( 30天内 0/15 2025-09-11 重新计)" |
+| `put_countdown` | 回售天计数 | 回售触发计数状态文本（已计/需计天数） | "0/30 \| 30" |
 | `delisted` | 是否退市 | 布尔值字符串，`"true"` 表示已退市，`"false"` 表示未退市 | "false" |
 | `delist_reason` | 退市原因 | 退市原因（仅已退市债券有效） | "强赎" |
 | `redemption_announcement_date` | 强赎公告日 | 强赎公告日期（仅已退市债券有效） | "2026-04-03" |

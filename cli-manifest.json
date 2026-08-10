@@ -16198,6 +16198,9 @@
       "force_redemption_trigger_price",
       "adjust_trigger_price",
       "put_trigger_price",
+      "force_redeem_countdown",
+      "down_revise_countdown",
+      "put_countdown",
       "delisted",
       "delist_reason",
       "redemption_announcement_date",
@@ -16252,6 +16255,35 @@
     "type": "js",
     "modulePath": "jisilu/cb-discuss.js",
     "sourceFile": "jisilu/cb-discuss.js",
+    "navigateBefore": "https://www.jisilu.cn"
+  },
+  {
+    "site": "jisilu",
+    "name": "cb-list",
+    "description": "集思录可转债列表（默认活跃，--delisted 返回已退市；需要登录）",
+    "access": "read",
+    "domain": "www.jisilu.cn",
+    "strategy": "cookie",
+    "browser": true,
+    "args": [
+      {
+        "name": "delisted",
+        "type": "bool",
+        "default": false,
+        "required": false,
+        "help": "true 返回已退市列表，默认返回活跃列表"
+      }
+    ],
+    "columns": [
+      "bondId",
+      "bondName",
+      "status",
+      "lastPrice",
+      "lastTradeDate"
+    ],
+    "type": "js",
+    "modulePath": "jisilu/cb-list.js",
+    "sourceFile": "jisilu/cb-list.js",
     "navigateBefore": "https://www.jisilu.cn"
   },
   {
