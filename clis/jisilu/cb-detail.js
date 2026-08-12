@@ -15,6 +15,7 @@ cli({
   columns: [
     'bond_code',
     'bond_name',
+    'current_price',
     'industry',
     'start_date',
     'list_date',
@@ -135,6 +136,26 @@ cli({
     })()`);
     result.bond_name = bondName;
 
+    // 顶部行情区的「价格」不是 jisilu_title/data_val 键值对，单独从摘要格提取。
+    result.current_price = await page.evaluate(`(() => {
+      const normalizeText = (text) => (text || '').replace(/\\s+/g, ' ').trim();
+      const cells = Array.from(document.querySelectorAll('td.jisilu_subtitle'));
+      for (const cell of cells) {
+        const label = normalizeText(
+          Array.from(cell.childNodes)
+            .filter(node => node.nodeType === Node.TEXT_NODE)
+            .map(node => node.textContent || '')
+            .join(' ')
+        );
+        if (label !== '价格') continue;
+
+        const spanValue = normalizeText(cell.querySelector('span')?.textContent || '');
+        if (spanValue) return spanValue;
+        return normalizeText(cell.textContent).replace(/^价格\\s*/, '');
+      }
+      return '';
+    })()`);
+
     // 提取事件列表
     const events = await page.evaluate(`(async () => {
       let tables = [];
@@ -145,6 +166,9 @@ cli({
       const getCells = (row) => row ? row.querySelectorAll('th, td') : [];
       const looksLikeDate = (text) => /\\d{4}[-\\/.]\\d{2}[-\\/.]\\d{2}/.test(text);
       const firstDate = (text) => ((text || '').match(/\\d{4}[-\\/.]\\d{2}[-\\/.]\\d{2}/)?.[0] || '').replace(/[\\.\\/]/g, '-');
+      const hasEvent = (eventType, eventTime) => allEvents.some(event =>
+        event.event_type === eventType && (!eventTime || event.event_time === eventTime)
+      );
       const inferEventType = (text) => {
         if (text.includes('不强赎') || text.includes('不提前赎回')) return 'no_redemption';
         if (text.includes('不下修')) return 'no_revise';
@@ -197,6 +221,28 @@ cli({
         }
       }
 
+      const redemptionAnnouncementDate = firstDate(
+        document.getElementById('redeem_dt')?.textContent
+        || Array.from(document.querySelectorAll('td.jisilu_title'))
+          .find(cell => normalizeText(cell.textContent) === '强赎公告日')
+          ?.nextElementSibling
+          ?.textContent
+        || ''
+      );
+
+      if (redemptionAnnouncementDate && !hasEvent('force_redemption', redemptionAnnouncementDate)) {
+        const redemptionPrice = normalizeText(document.getElementById('real_force_redeem_price')?.textContent || '');
+        const detailParts = ['强赎公告'];
+        if (redemptionPrice && redemptionPrice !== '-') {
+          detailParts.push(\`强赎公告价 \${redemptionPrice}\`);
+        }
+        allEvents.push({
+          event_time: redemptionAnnouncementDate,
+          event_type: 'force_redemption',
+          detail: detailParts.join(' | '),
+        });
+      }
+
       // 评级历史表里的债项评级变更
       const ratingHistoryRows = [];
       for (const table of tables) {
@@ -246,10 +292,6 @@ cli({
             issuer_rating: row.issuer_rating,
           });
         });
-
-      if (allEvents.length > 0) {
-        return allEvents;
-      }
 
       // 改进的辅助函数：查找事件表格
       function findEventTable(titleText, expectedMinCols) {
@@ -361,7 +403,7 @@ cli({
             }
 
             // 只有当有实际数据时才添加事件
-            if (eventTime || detail) {
+            if ((eventTime || detail) && !hasEvent(eventTypeEn, eventTime)) {
               allEvents.push({
                 event_time: eventTime,
                 event_type: eventTypeEn,
@@ -395,7 +437,7 @@ cli({
             }
 
             // 只有当有实际数据时才添加事件
-            if (resolutionDate || detail) {
+            if ((resolutionDate || detail) && !hasEvent(eventType, resolutionDate)) {
               allEvents.push({
                 event_time: resolutionDate,
                 event_type: eventType,
@@ -421,7 +463,7 @@ cli({
             const detail = cells[2]?.textContent.trim() || '';
 
             // 只有当有实际数据时才添加事件
-            if (announcementDate || detail) {
+            if ((announcementDate || detail) && !hasEvent('no_redemption', announcementDate)) {
               allEvents.push({
                 event_time: announcementDate,
                 event_type: 'no_redemption',
