@@ -15,6 +15,8 @@ cli({
   columns: [
     'bond_code',
     'bond_name',
+    'stock_code',
+    'stock_name',
     'current_price',
     'industry',
     'start_date',
@@ -135,6 +137,34 @@ cli({
       return match && match[1] ? match[1] : '';
     })()`);
     result.bond_name = bondName;
+
+    // 提取正股代码和名称 - 顶部正股链接是详情页可见契约。
+    const stockInfo = await page.evaluate(`(() => {
+      const normalizeText = (text) => (text || '').replace(/\\s+/g, ' ').trim();
+      const stockLink = document.querySelector('.stock_nm a[href*="/data/stock/"]');
+      if (!stockLink) return { stock_code: '', stock_name: '' };
+
+      const href = stockLink.getAttribute('href') || '';
+      const codeFromHref = href.match(/\\/data\\/stock\\/(\\d{6})/)?.[1] || '';
+      const codeFromText = normalizeText(stockLink.textContent).match(/\\b(\\d{6})\\b/)?.[1] || '';
+      const nameNode = stockLink.querySelector('.font_16');
+      let stockName = '';
+      if (nameNode) {
+        const clone = nameNode.cloneNode(true);
+        clone.querySelectorAll('sup').forEach(node => node.remove());
+        stockName = normalizeText(clone.textContent);
+      }
+      if (!stockName) {
+        stockName = normalizeText(stockLink.textContent).replace(/\\b\\d{6}\\b/g, '').trim();
+      }
+
+      return {
+        stock_code: codeFromHref || codeFromText,
+        stock_name: stockName,
+      };
+    })()`);
+    result.stock_code = stockInfo.stock_code;
+    result.stock_name = stockInfo.stock_name;
 
     // 顶部行情区的「价格」不是 jisilu_title/data_val 键值对，单独从摘要格提取。
     result.current_price = await page.evaluate(`(() => {

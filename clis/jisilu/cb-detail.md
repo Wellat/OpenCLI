@@ -23,6 +23,8 @@ opencli jisilu cb-detail <code> -f json
 |----------------|----------------|------|------|
 | `bond_code` | 债券代码 | 可转债代码 | "111000" |
 | `bond_name` | 债券名称 | 可转债中文名称 | "起帆转债" |
+| `stock_code` | 正股代码 | 可转债对应的正股代码 | "605222" |
+| `stock_name` | 正股名称 | 可转债对应的正股名称 | "起帆电缆" |
 | `current_price` | 当前价格 | 页面顶部行情区显示的可转债当前价格；已退市债券可能为 "-" | "141.429" |
 | `industry` | 行业 | 所属行业分类 | "电力设备-电网设备-线缆部件及其他" |
 | `start_date` | 起息日 | 债券开始计息日期 | "2021-05-24" |
@@ -92,6 +94,8 @@ opencli jisilu cb-detail 111000 -f json
 {
   "bond_code": "111000",
   "bond_name": "起帆转债",
+  "stock_code": "605222",
+  "stock_name": "起帆电缆",
   "current_price": "141.429",
   "industry": "电力设备-电网设备-线缆部件及其他",
   "start_date": "2021-05-24",
@@ -140,6 +144,8 @@ opencli jisilu cb-detail 113601 -f json
 {
   "bond_code": "113601",
   "bond_name": "塞力转债",
+  "stock_code": "603716",
+  "stock_name": "塞力医疗",
   "current_price": "-",
   "industry": "医药生物-医药商业-医药流通",
   // ... 其他字段
